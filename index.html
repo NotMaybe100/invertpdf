@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invert PDF Colors</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            font-size: 2rem;
+            color: #444;
+            margin-bottom: 20px;
+        }
+
+        .options {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        input[type="file"], input[type="text"], select, button {
+            padding: 10px;
+            font-size: 1rem;
+            border: 2px solid #bbb;
+            border-radius: 5px;
+            background-color: #fff;
+            transition: border-color 0.3s, background-color 0.3s;
+        }
+
+        input[type="file"]:hover,
+        input[type="text"]:hover,
+        select:hover {
+            border-color: #888;
+        }
+
+        button {
+            color: #fff;
+            background-color: #007bff;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            background-color: #aaa;
+            cursor: not-allowed;
+        }
+
+        button:hover:not(:disabled) {
+            background-color: #0056b3;
+            transform: scale(1.05);
+        }
+
+        label {
+            display: block;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Invert PDF Colors</h1>
+    <input type="file" id="upload" accept=".pdf">
+    <div class="options">
+        <div>
+            <label for="file-name">File Name:</label>
+            <input type="text" id="file-name" placeholder="Enter file name" value="inverted_pdf">
+        </div>
+        <div>
+            <label for="resolution">Resolution (PPI):</label>
+            <select id="resolution">
+                <option value="72">72 PPI (Low)</option>
+                <option value="150">150 PPI (Medium)</option>
+                <option value="300">300 PPI (High)</option>
+            </select>
+        </div>
+        <button id="download-button" disabled>Download Inverted PDF</button>
+    </div>
+
+    <script>
+        const pdfjsLib = window['pdfjs-dist/build/pdf'];
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+        const uploadInput = document.getElementById('upload');
+        const fileNameInput = document.getElementById('file-name');
+        const resolutionSelect = document.getElementById('resolution');
+        const downloadButton = document.getElementById('download-button');
+        let pdfInstance = null;
+
+        uploadInput.addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (file && file.type === 'application/pdf') {
+                const url = URL.createObjectURL(file);
+                try {
+                    pdfInstance = await pdfjsLib.getDocument(url).promise;
+                    downloadButton.disabled = false;
+                } catch (error) {
+                    console.error('Error loading PDF:', error);
+                    alert('Error loading PDF. Please try again with a different file.');
+                }
+            }
+        });
+
+        downloadButton.addEventListener('click', async () => {
+            if (pdfInstance) {
+                const { jsPDF } = window.jspdf;
+                const fileName = fileNameInput.value.trim() || 'inverted_pdf';
+                const resolution = parseInt(resolutionSelect.value);
+
+                let doc = null;
+
+                for (let pageNumber = 1; pageNumber <= pdfInstance.numPages; pageNumber++) {
+                    const page = await pdfInstance.getPage(pageNumber);
+                    const viewport = page.getViewport({ scale: resolution / 72 }); // Scale based on resolution
+
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+
+                    const renderContext = {
+                        canvasContext: context,
+                        viewport: viewport,
+                    };
+                    await page.render(renderContext).promise;
+
+                    // Invert colors
+                    context.globalCompositeOperation = 'difference';
+                    context.fillStyle = 'white';
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+
+                    pageWidth = (viewport.width * 72) / resolution; // Preserve original size
+                    pageHeight = (viewport.height * 72) / resolution;
+
+                    // Initialize jsPDF with the first page dimensions
+                    if (!doc) {
+                        doc = new jsPDF({
+                            orientation: pageWidth > pageHeight ? 'landscape' : 'portrait',
+                            unit: 'pt',
+                            format: [pageWidth, pageHeight],
+                        });
+                    } else {
+                        doc.addPage([pageWidth, pageHeight]);
+                        doc.setPage(pageNumber);
+                    }
+
+                    // Add image to the PDF
+                    const imgData = canvas.toDataURL('image/jpeg');
+                    doc.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
+                }
+
+                doc.save(`${fileName}.pdf`);
+            }
+        });
+    </script>
+</body>
+</html>
